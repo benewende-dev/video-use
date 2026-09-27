@@ -15,7 +15,7 @@ Three things must exist on this machine:
 
 1. The `video-use` repo cloned somewhere stable.
 2. `ffmpeg` on `$PATH` (plus optional `yt-dlp` for online sources).
-3. An ElevenLabs API key in `.env` at the repo root (for Scribe transcription).
+3. An ElevenLabs API key in `.env` at the repo root (for Scribe transcription), **or** whisper.cpp for free local transcription: `brew install whisper-cpp` plus a model in `~/.cache/whisper/ggml-small.bin` (see `helpers/whisper_local.py`). Without a key, the helpers fall back to whisper.cpp when it is installed; `--local` forces it.
 
 And one thing must be true about the current agent:
 

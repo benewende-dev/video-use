@@ -20,7 +20,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
-from transcribe import load_api_key, transcribe_one, transcript_path
+from transcribe import load_api_key, transcribe_one, transcript_path, use_local
 
 
 VIDEO_EXTS = {".mp4", ".MP4", ".mov", ".MOV", ".mkv", ".MKV", ".avi", ".AVI", ".m4v"}
@@ -62,6 +62,10 @@ def main() -> None:
         default=0,
         help="Zero-based audio track to transcribe (OBS: 0 = game, 1 = mic).",
     )
+    ap.add_argument("--local", action="store_true",
+                    help="Transcribe locally with whisper.cpp (free, no diarization).")
+    ap.add_argument("--prompt", type=str, default=None,
+                    help="Local only: names and brands to spell right.")
     args = ap.parse_args()
 
     videos_dir = args.videos_dir.resolve()
@@ -84,7 +88,11 @@ def main() -> None:
         print("nothing to do")
         return
 
-    api_key = load_api_key()
+    local = use_local(args.local)
+    api_key = None if local else load_api_key()
+    if local:
+        # whisper.cpp already uses every core: parallel runs only fight for them.
+        args.workers = 1
 
     print(f"transcribing {len(pending)} files with {args.workers} parallel workers")
     t0 = time.time()
@@ -101,6 +109,7 @@ def main() -> None:
                 num_speakers=args.num_speakers,
                 verbose=False,
                 audio_track=args.audio_track,
+                prompt=args.prompt,
             ): v
             for v in pending
         }
