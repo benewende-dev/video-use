@@ -64,6 +64,7 @@ brew install ffmpeg             # required
 brew install yt-dlp             # optional, for downloading online sources
 
 # 3. Add your ElevenLabs API key
+#    (or go free: brew install whisper-cpp + a ggml model, then --local; see helpers/whisper_local.py)
 cp .env.example .env
 $EDITOR .env                    # ELEVENLABS_API_KEY=...
 ```

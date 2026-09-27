@@ -11,6 +11,11 @@ Usage:
     python helpers/transcribe.py <video_path> --edit-dir /custom/edit
     python helpers/transcribe.py <video_path> --language en
     python helpers/transcribe.py <video_path> --num-speakers 2
+    python helpers/transcribe.py <video_path> --local --prompt "Awa, Baarali"
+
+--local (or VIDEO_USE_TRANSCRIBER=whisper, or no ElevenLabs key with
+whisper.cpp installed) transcribes on this machine for free with whisper.cpp,
+in the same JSON shape. See helpers/whisper_local.py for what it gives up.
 """
 
 from __future__ import annotations
@@ -29,8 +34,25 @@ from pathlib import Path
 
 import requests
 
+from whisper_local import call_whisper, whisper_available
+
 
 SCRIBE_URL = "https://api.elevenlabs.io/v1/speech-to-text"
+
+
+def use_local(flag: bool = False) -> bool:
+    """Local whisper.cpp when asked, or when there is no Scribe key to use."""
+    if flag or os.environ.get("VIDEO_USE_TRANSCRIBER", "").lower() == "whisper":
+        return True
+    return not has_api_key() and whisper_available()
+
+
+def has_api_key() -> bool:
+    try:
+        load_api_key()
+        return True
+    except SystemExit:
+        return False
 
 
 def load_api_key() -> str:
@@ -128,15 +150,17 @@ def transcript_path(edit_dir: Path, video: Path, audio_track: int = 0) -> Path:
 def transcribe_one(
     video: Path,
     edit_dir: Path,
-    api_key: str,
+    api_key: str | None,
     language: str | None = None,
     num_speakers: int | None = None,
     verbose: bool = True,
     audio_track: int = 0,
+    prompt: str | None = None,
 ) -> Path:
     """Transcribe a single video. Returns path to transcript JSON.
 
     Cached: returns existing path immediately if the transcript already exists.
+    api_key None = local whisper.cpp instead of Scribe.
     """
     transcripts_dir = edit_dir / "transcripts"
     transcripts_dir.mkdir(parents=True, exist_ok=True)
@@ -173,9 +197,14 @@ def transcribe_one(
             )
 
         size_mb = audio.stat().st_size / (1024 * 1024)
-        if verbose:
-            print(f"  uploading {video.stem}.wav ({size_mb:.1f} MB)", flush=True)
-        payload = call_scribe(audio, api_key, language, num_speakers)
+        if api_key is None:
+            if verbose:
+                print(f"  transcribing {video.stem}.wav locally (whisper.cpp)", flush=True)
+            payload = call_whisper(audio, language, prompt)
+        else:
+            if verbose:
+                print(f"  uploading {video.stem}.wav ({size_mb:.1f} MB)", flush=True)
+            payload = call_scribe(audio, api_key, language, num_speakers)
 
     out_path.write_text(json.dumps(payload, indent=2))
     dt = time.time() - t0
@@ -218,6 +247,10 @@ def main() -> None:
              "and the mic on track 1; without this ffmpeg applies its default audio "
              "stream selection, which picks the track with the most channels.",
     )
+    ap.add_argument("--local", action="store_true",
+                    help="Transcribe locally with whisper.cpp (free, no diarization).")
+    ap.add_argument("--prompt", type=str, default=None,
+                    help="Local only: names and brands to spell right, e.g. 'Awa, Baarali'.")
     args = ap.parse_args()
 
     video = args.video.resolve()
@@ -225,7 +258,7 @@ def main() -> None:
         sys.exit(f"video not found: {video}")
 
     edit_dir = (args.edit_dir or (video.parent / "edit")).resolve()
-    api_key = load_api_key()
+    api_key = None if use_local(args.local) else load_api_key()
 
     transcribe_one(
         video=video,
@@ -234,6 +267,7 @@ def main() -> None:
         language=args.language,
         num_speakers=args.num_speakers,
         audio_track=args.audio_track,
+        prompt=args.prompt,
     )
 
 
